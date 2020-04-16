@@ -2,16 +2,35 @@
 //!
 //! This can be used as a `Model` in huggingface's tokenizers, or standalone.
 //!
+//! By default, this library builds only the code to be used standalone. Add it
+//! to your `Cargo.toml` with the following `[dependencies]` entry:
+//!
+//! ```toml
+//! [dependencies]
+//! aleph-alpha-tokenizers = "0.1"
+//! ```
+//!
+//! If you want to use it together with `tokenizers`, you need to enable the
+//! `huggingface` feature, so the dependency entry becomes:
+//!
+//! ```toml
+//! [dependencies]
+//! aleph-alpha-tokenizers = { version = "0.1", features = ["huggingface"] }
+//! ```
+//!
 //! # Examples
 //!
 //! To use as a [`Model`](../tokenizers/tokenizer/trait.Model.html), you need
 //! to box it:
-//! 
 //!
 //! ```
 //!# use std::error::Error;
-//! use tokenizers::tokenizer::{EncodeInput, Model, Tokenizer};
-//! use tokenizers::pre_tokenizers::bert::BertPreTokenizer;
+//!
+//!# #[cfg(feature = "huggingface")] {
+//! use tokenizers::{
+//!     tokenizer::{EncodeInput, Model, Tokenizer},
+//!     pre_tokenizers::bert::BertPreTokenizer,
+//! };
 //! use aleph_alpha_tokenizer::AlephAlphaTokenizer;
 //!
 //! let mut tokenizer = Tokenizer::new(
@@ -19,10 +38,12 @@
 //! tokenizer.with_pre_tokenizer(Box::new(BertPreTokenizer));
 //! let _result = tokenizer.encode(
 //!     EncodeInput::Single("Some Test".to_string()), true)?;
+//!# }
 //!# Ok::<_, Box<dyn Error + Send + Sync>>(())
 //! ```
 //!
-//! Otherwise, you can use it directly:
+//! Remember this depends on the `huggingface` feature. Otherwise, you can use
+//! it directly:
 //!
 //! ```
 //!# use std::error::Error;
@@ -30,7 +51,7 @@
 //!
 //! let source_text = "Ein interessantes Beispiel";
 //! let tokenizer = AlephAlphaTokenizer::from_vocab("vocab.txt")?;
-//! let mut ids = Vec::new();
+//! let mut ids: Vec<i64> = Vec::new();
 //! let mut ranges = Vec::new();
 //! tokenizer.tokens_into(source_text, &mut ids, &mut ranges, None);
 //! for (id, range) in ids.iter().zip(ranges.iter()) {
@@ -50,10 +71,6 @@ use std::mem::replace;
 use std::ops::Range;
 use std::path::PathBuf;
 
-#[cfg(feature = "huggingface")]
-use std::borrow::Cow;
-#[cfg(feature = "huggingface")]
-use std::path::Path;
 #[cfg(feature = "huggingface")]
 use tokenizers::tokenizer::{Model, Token as HfToken};
 
@@ -102,6 +119,7 @@ impl TokenID for u64 {
 	fn restore(self) -> u64 { self }
 }
 
+// This can be used in torch Tensors
 impl TokenID for i64 {
 	fn zero() -> Self { 0 }
 	
@@ -112,6 +130,18 @@ impl TokenID for i64 {
 	fn restore(self) -> u64 { self as u64 }
 }
 
+// This can be used in torch Tensors
+impl TokenID for i32 {
+	fn zero() -> Self { 0 }
+	
+	#[inline(always)]
+	fn coerce(t: u64) -> Self { t as i32 }
+
+	#[inline(always)]
+	fn restore(self) -> u64 { self as u64 }
+}
+
+// This can be used in torch Tensors
 impl TokenID for f64 {
 	fn zero() -> Self { 0.0 }
 	
@@ -260,7 +290,7 @@ impl AlephAlphaTokenizer {
     ///
     /// let source_text = "Ein interessantes Beispiel";
     /// let tokenizer = AlephAlphaTokenizer::from_vocab("vocab.txt").unwrap();
-    /// let mut ids = Vec::new();
+    /// let mut ids: Vec<i32> = Vec::new();
     /// let mut ranges = Vec::new();
     /// tokenizer.tokens_into(source_text, &mut ids, &mut ranges, None);
     /// assert_eq!(&[3, 198, 19168, 26889, 2249, 4], &ids[..]);
@@ -340,10 +370,10 @@ impl AlephAlphaTokenizer {
     /// use aleph_alpha_tokenizer::AlephAlphaTokenizer;
     /// let tokenizer = AlephAlphaTokenizer::from_vocab("vocab.txt").unwrap();
     ///
-    /// assert!(tokenizer.is_special(0)); // [PAD]
-    /// assert!(tokenizer.is_special(3));  // [CLS]
-    /// assert!(tokenizer.is_special(4));  // [SEP]
-    /// assert!(!tokenizer.is_special(42));
+    /// assert!(tokenizer.is_special(0i32)); // [PAD]
+    /// assert!(tokenizer.is_special(3i32));  // [CLS]
+    /// assert!(tokenizer.is_special(4i32));  // [SEP]
+    /// assert!(!tokenizer.is_special(42i32));
     /// ```
     #[inline]
     pub fn is_special<T: TokenID>(&self, token_id: T) -> bool {
@@ -357,16 +387,17 @@ impl AlephAlphaTokenizer {
     /// ```
     /// use aleph_alpha_tokenizer::AlephAlphaTokenizer;
     ///
-    /// let pad = 0;
-    /// assert_eq!(AlephAlphaTokenizer::attention(pad), 0);
-    /// assert_eq!(AlephAlphaTokenizer::attention(99), 1);
+    /// let pad_attention: i64 = AlephAlphaTokenizer::attention(0u64);
+    /// let token_attention: f64 = AlephAlphaTokenizer::attention(99i32);
+    /// assert_eq!(pad_attention, 0);
+    /// assert_eq!(token_attention, 1.0f64);
     /// ```
     #[inline]
-    pub fn attention<T: TokenID>(token_id: T) -> T {
+    pub fn attention<T: TokenID, U: TokenID>(token_id: T) -> U {
         if token_id == T::zero() {
-            T::zero()
+            U::zero()
         } else {
-            T::coerce(1)
+            U::coerce(1)
         }
     }
 
@@ -377,11 +408,12 @@ impl AlephAlphaTokenizer {
     /// ```
     /// use aleph_alpha_tokenizer::AlephAlphaTokenizer;
     ///
-    /// let mut attns = Vec::new();
+    /// let mut attns: Vec<i32> = Vec::new();
     /// AlephAlphaTokenizer::attentions_into(&[3, 4285, 4, 0, 0], &mut attns);
     /// assert_eq!(&attns[..], &[1, 1, 1, 0, 0]);
     /// ```
-    pub fn attentions_into<T: TokenID>(token_ids: &[T], attns: &mut Vec<T>) {
+    pub fn attentions_into<T: TokenID, U: TokenID>(token_ids: &[T], attns: &mut Vec<U>) {
+		attns.clear();
         attns.extend(token_ids.iter().cloned().map(AlephAlphaTokenizer::attention));
     }
     
@@ -396,6 +428,9 @@ impl AlephAlphaTokenizer {
         Ok(vocab_path)
     }
 }
+
+#[cfg(feature = "huggingface")]
+use std::{borrow::Cow, path::Path};
 
 /// This type implements the [`Model`] trait so you can use it within
 /// huggingface's tokenizers framework.

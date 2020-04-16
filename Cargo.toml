@@ -6,7 +6,9 @@ edition = "2018"
 include = ["README.md", "LICENSE-MIT", "LICENSE-APACHE", "src/lib.rs"]
 
 [features]
+# Enable this to allow using the tokenizer as a `tokenizer::Model`
 huggingface = ["tokenizers"]
+default = []
 
 [dependencies]
 tokenizers = { version = "0.9.0", optional = true }
