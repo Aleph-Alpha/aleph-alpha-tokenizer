@@ -1,9 +1,15 @@
 [package]
-name = "aleph-alpha-tokenizer"
-version = "0.1.0"
 authors = ["Andre Bogus <andre.bogus@aleph-alpha.de>"]
+description = "A fast implementation of a wordpiece-inspired tokenizer"
+documentation = "https://docs.rs/aleph-alpha-tokenizer"
 edition = "2018"
 include = ["README.md", "LICENSE-MIT", "LICENSE-APACHE", "src/lib.rs"]
+keywords = ["NLP", "tokenizer", "Aleph Alpha"]
+license = "MIT OR Apache-2.0"
+name = "aleph-alpha-tokenizer"
+readme = "README.md"
+repository = "https://github.com/Aleph-Alpha/aleph-alpha-tokenizer"
+version = "0.1.0"
 
 [features]
 # Enable this to allow using the tokenizer as a `tokenizer::Model`
