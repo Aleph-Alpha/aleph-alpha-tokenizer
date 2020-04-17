@@ -19,6 +19,7 @@ words. The following single-core runtimes in µs were measured for a set of
 benchmarks:
 
 | # |AlephAlphaTokenizer | ~ as Model | wordpiece |
+|---|--------------------|------------|-----------|
 | 0 |  780.927           | 1251.911   |  2134.343 |
 | 1 | 1000.583           | 1452.931   |  1870.142 |
 | 2 | 3240.754           | 4659.755   |  9540.037 |
