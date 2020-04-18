@@ -17,6 +17,6 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - name: Build
-      run: cargo build --verbose ${{ features }}
+      run: cargo build --verbose ${{ matrix.features }}
     - name: Run tests
-      run: cargo test --verbose ${{ features }}
+      run: cargo test --verbose ${{ matrix.features }}
