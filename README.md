@@ -1,5 +1,9 @@
 # aleph-alpha-tokenizer
 
+![Rust](https://github.com/Aleph-Alpha/aleph-alpha-tokenizer/workflows/Rust/badge.svg)
+[![docs.rs](https://docs.rs/aleph-alpha-tokenizer/badge.svg)](https://docs.rs/aleph-alpha-tokenizer)
+[![License: MIT/Apache](https://img.shields.io/crates/l/aleph-alpha-tokenizer.svg)](#license)
+
 We at Aleph Alpha are big fans of huggingface's [tokenizers] crate. Kudos for
 this great library. There is only one downside: The interface is optimized for
 the bindings, not for working with it from within Rust.
@@ -40,4 +44,5 @@ can omit a lot of allocation and memory copying, so we are at least 45% faster.
 
 # License
 
-This package is licensed under MIT or Apache 2 License, at your discretion.
+This package is licensed under MIT or Apache License Version 2, at your 
+discretion.
