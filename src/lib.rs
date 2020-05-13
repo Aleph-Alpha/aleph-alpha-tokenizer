@@ -81,75 +81,104 @@ use tokenizers::tokenizer::{Model, Token as HfToken};
 fn find_longest_prefix<D: AsRef<[u8]>>(fst: &Fst<D>, input: &[u8]) -> Option<(usize, u64)> {
     let mut node = fst.root();
     let mut out = Output::zero();
-    let mut last_match: Option<(usize, u64)> = None;
+    let mut last_match: Option<(usize, Output)> = None;
     for (i, &b) in input.iter().enumerate() {
         if let Some(trans_index) = node.find_input(b) {
             let t = node.transition(trans_index);
             node = fst.node(t.addr);
-            if node.is_final() {
-                last_match = Some((i + 1, out.cat(node.final_output()).value()));
-            }
             out = out.cat(t.out);
+            if node.is_final() {
+                last_match = Some((i + 1, out.cat(node.final_output())));
+            }
         } else {
-            return last_match;
+            break;
         }
     }
-    last_match
+    last_match.map(|(i, o)| (i, o.value()))
+}
+
+// we use this to calculate offsets in characters instead of bytes
+fn char_offs(text: &str, last_known_char: usize, range: Range<usize>) -> usize {
+    text[range].chars().count() + last_known_char
 }
 
 /// A trait to be able to convert token IDs on the fly
 pub trait TokenID: PartialEq + Clone {
-	/// Get a zero value
-	fn zero() -> Self;
-	
-	/// Convert a `u64` to `Self`
-	fn coerce(t: u64) -> Self;
-	
-	/// Convert back into `u64`
-	fn restore(self) -> u64;
+    /// Get a zero value
+    fn zero() -> Self;
+
+    /// Convert a `u64` to `Self`
+    fn coerce(t: u64) -> Self;
+
+    /// Convert back into `u64`
+    fn restore(self) -> u64;
 }
 
 impl TokenID for u64 {
-	fn zero() -> Self { 0 }
-	
-	#[inline(always)]
-	fn coerce(t: u64) -> Self { t }
-	
-	#[inline(always)]
-	fn restore(self) -> u64 { self }
+    fn zero() -> Self {
+        0
+    }
+
+    #[inline(always)]
+    fn coerce(t: u64) -> Self {
+        t
+    }
+
+    #[inline(always)]
+    fn restore(self) -> u64 {
+        self
+    }
 }
 
 // This can be used in torch Tensors
 impl TokenID for i64 {
-	fn zero() -> Self { 0 }
-	
-	#[inline(always)]
-	fn coerce(t: u64) -> Self { t as i64 }
+    fn zero() -> Self {
+        0
+    }
 
-	#[inline(always)]
-	fn restore(self) -> u64 { self as u64 }
+    #[inline(always)]
+    fn coerce(t: u64) -> Self {
+        t as i64
+    }
+
+    #[inline(always)]
+    fn restore(self) -> u64 {
+        self as u64
+    }
 }
 
 // This can be used in torch Tensors
 impl TokenID for i32 {
-	fn zero() -> Self { 0 }
-	
-	#[inline(always)]
-	fn coerce(t: u64) -> Self { t as i32 }
+    fn zero() -> Self {
+        0
+    }
 
-	#[inline(always)]
-	fn restore(self) -> u64 { self as u64 }
+    #[inline(always)]
+    fn coerce(t: u64) -> Self {
+        t as i32
+    }
+
+    #[inline(always)]
+    fn restore(self) -> u64 {
+        self as u64
+    }
 }
 
 // This can be used in torch Tensors
 impl TokenID for f64 {
-	fn zero() -> Self { 0.0 }
-	
-	#[inline(always)]
-	fn coerce(t: u64) -> Self { t as f64 }
+    fn zero() -> Self {
+        0.0
+    }
 
-	#[inline(always)]
-	fn restore(self) -> u64 { self as u64 }
+    #[inline(always)]
+    fn coerce(t: u64) -> Self {
+        t as f64
+    }
+
+    #[inline(always)]
+    fn restore(self) -> u64 {
+        self as u64
+    }
 }
 
 /// The Tokenizer. Use [`AlephAlphaTokenizer::from_vocab`] to create an
@@ -186,7 +215,7 @@ impl AlephAlphaTokenizer {
         let mut prefix = None;
         let mut suffix = None;
         for (i, tok) in tokens.iter().enumerate() {
-            let token = tok.as_bytes();
+            let token = tok.trim().as_bytes();
             if token.starts_with(b"[") && token.ends_with(b"]") {
                 if token.starts_with(b"[unused") {
                     continue;
@@ -198,7 +227,7 @@ impl AlephAlphaTokenizer {
                 } else if token == b"[SEP]" {
                     suffix = Some(i as u32);
                 }
-				special_tokens.push(i as u64);
+                special_tokens.push(i as u64);
             }
             if token.starts_with(b"##") {
                 follower.push((token[2..].to_vec(), i as u64));
@@ -206,20 +235,52 @@ impl AlephAlphaTokenizer {
                 starter.push((token.to_vec(), i as u64));
             }
         }
+        let unk_id = if let Some(u) = unk_id {
+            u
+        } else {
+            return Err(Box::new(std::env::VarError::NotPresent));
+        };
         starter.sort_by(|(k, _), (j, _)| k.cmp(j));
         follower.sort_by(|(k, _), (j, _)| k.cmp(j));
+        let starters = Fst::from_iter_map(starter)?;
+        let followers = Fst::from_iter_map(follower)?;
         Ok(AlephAlphaTokenizer {
             tokens,
-            starters: Fst::from_iter_map(starter)?,
-            followers: Fst::from_iter_map(follower)?,
+            starters,
+            followers,
             special_tokens,
-            unk_id: unk_id.ok_or(Box::new(std::env::VarError::NotPresent))?,
+            unk_id,
             prefix,
             suffix,
         })
     }
 
-	#[inline]
+    /// Wraps a UTF8 byte range iterator to produce a tuple of (byte-range, character-range).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    ///# use aleph_alpha_tokenizer::AlephAlphaTokenizer;
+    /// let text = "äußerst";
+    /// let ranges = &[0usize..3, 3..7, 7..9];
+    /// assert_eq!(&[(0..3, 0..2), (3..7, 2..5), (7..9, 5..7)],
+    ///     &AlephAlphaTokenizer::char_ranges(text, ranges.iter()).collect::<Vec<_>>()[..]);
+    /// ```
+    pub fn char_ranges<'i>(
+        text: &'i str,
+        ranges: impl Iterator<Item = &'i Range<usize>> + 'i,
+    ) -> impl Iterator<Item = (Range<usize>, Range<usize>)> + 'i {
+        let (mut last_char, mut last_byte) = (0, 0);
+        ranges.map(move |r| {
+            let (s, e) = (r.start, r.end);
+            let cs = char_offs(text, last_char, last_byte..s);
+            last_char = char_offs(text, cs, s..e);
+            last_byte = e;
+            (r.clone(), cs..last_char)
+        })
+    }
+
+    #[inline]
     fn add_prefix<T: TokenID>(&self, token_ids: &mut Vec<T>, token_ranges: &mut Vec<Range<usize>>) {
         if let Some(id) = self.prefix {
             token_ids.push(T::coerce(u64::from(id)));
@@ -227,7 +288,7 @@ impl AlephAlphaTokenizer {
         }
     }
 
-	#[inline]
+    #[inline]
     fn add_suffix<T: TokenID>(&self, token_ids: &mut Vec<T>, token_ranges: &mut Vec<Range<usize>>) {
         if let Some(id) = self.suffix {
             let pos = token_ranges.last().map_or(0, |range| range.end);
@@ -272,7 +333,7 @@ impl AlephAlphaTokenizer {
     }
 
     /// tokenize the given text into a `&mut Vec<u64>` for ids and
-    /// `&mut Vec<Range<usize>>` for source ranges respectively, optionally 
+    /// `&mut Vec<Range<usize>>` for source ranges respectively, optionally
     /// filling a `words` `&mut Vec<Range>` with ranges into the tokens array
     /// with the words' token indices.
     ///
@@ -293,7 +354,7 @@ impl AlephAlphaTokenizer {
     /// let mut ids: Vec<i32> = Vec::new();
     /// let mut ranges = Vec::new();
     /// tokenizer.tokens_into(source_text, &mut ids, &mut ranges, None);
-    /// assert_eq!(&[3, 198, 19168, 26889, 2249, 4], &ids[..]);
+    /// assert_eq!(&[3, 198, 23181, 26902, 2249, 4], &ids[..]);
     /// ```
     pub fn tokens_into<T: TokenID>(
         &self,
@@ -302,20 +363,25 @@ impl AlephAlphaTokenizer {
         token_ranges: &mut Vec<Range<usize>>,
         words: Option<&mut Vec<Range<usize>>>,
     ) {
-		token_ids.clear();
-		token_ranges.clear();
-		let text_len = text.len();
+        token_ids.clear();
+        token_ranges.clear();
+        let text_len = text.len();
         let mut words = words;
         if let Some(w) = words.as_mut() {
-			w.clear();
-		}
+            w.clear();
+        }
         let mut last_offs = 0;
         self.add_prefix(token_ids, token_ranges);
         let mut last_token = token_ids.len();
         //TODO: there may be a faster version of this using SIMD
         while let Some(next_ws) = text[last_offs..].find(char::is_whitespace) {
             if next_ws != 0 {
-                self.tokenize_word(text, last_offs..last_offs + next_ws, token_ids, token_ranges);
+                self.tokenize_word(
+                    text,
+                    last_offs..last_offs + next_ws,
+                    token_ids,
+                    token_ranges,
+                );
                 if let Some(w) = words.as_mut() {
                     w.push(last_token..replace(&mut last_token, token_ids.len()));
                 }
@@ -352,12 +418,16 @@ impl AlephAlphaTokenizer {
     /// let tokenizer = AlephAlphaTokenizer::from_vocab("vocab.txt").unwrap();
     ///
     /// assert_eq!(
-    ///     vec!["[CLS]", "Super", "[SEP]"], 
+    ///     vec!["[CLS]", "Super", "[SEP]"],
     ///     tokenizer.texts_of(&[3, 4285, 4])
     /// );
     /// ```
     pub fn texts_of<'t, T: TokenID>(&'t self, token_ids: &[T]) -> Vec<&'t str> {
-        token_ids.iter().cloned().map(|id| self.text_of(id)).collect()
+        token_ids
+            .iter()
+            .cloned()
+            .map(|id| self.text_of(id))
+            .collect()
     }
 
     /// Determines whether this token is a special token.
@@ -413,13 +483,18 @@ impl AlephAlphaTokenizer {
     /// assert_eq!(&attns[..], &[1, 1, 1, 0, 0]);
     /// ```
     pub fn attentions_into<T: TokenID, U: TokenID>(token_ids: &[T], attns: &mut Vec<U>) {
-		attns.clear();
-        attns.extend(token_ids.iter().cloned().map(AlephAlphaTokenizer::attention));
+        attns.clear();
+        attns.extend(
+            token_ids
+                .iter()
+                .cloned()
+                .map(AlephAlphaTokenizer::attention),
+        );
     }
-    
+
     /// Save the vocabulary back to a file
     pub fn save_vocab(&self, vocab_path: PathBuf) -> Result<PathBuf, Box<dyn Error + Send + Sync>> {
-		let vocab = File::create(&vocab_path)?;
+        let vocab = File::create(&vocab_path)?;
         let mut vocab_writer = BufWriter::new(vocab);
         for token in &self.tokens {
             writeln!(vocab_writer, "{}", token)?;
@@ -442,6 +517,8 @@ impl Model for AlephAlphaTokenizer {
     ) -> Result<Vec<HfToken>, Box<dyn Error + Send + Sync>> {
         // we expect at least one token per word.
         let mut result = Vec::with_capacity(tokens.len());
+        let mut last_byte = 0;
+        let mut last_char = 0; //TODO
         for (index, (word_str, offsets)) in tokens.into_iter().enumerate() {
             let word = index as u32;
             let word_index = result.len();
