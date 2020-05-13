@@ -39,14 +39,14 @@ fn compare_aleph_wordpiece(c: &mut Criterion) {
             b.iter(|| aleph_alpha.tokenize(black_box(words.clone())))
         });
         group.bench_with_input(BenchmarkId::new("aleph_alpha", i), &i, |b, _| {
-			let mut ids = Vec::new();
-			let mut ranges = Vec::new();
-			b.iter(|| {
-				aleph_alpha.tokens_into(black_box(text), &mut ids, &mut ranges, None);
-				black_box(&ids);
-				black_box(&ranges);
-			})
-		});
+            let mut ids: Vec<u64> = Vec::new();
+            let mut ranges = Vec::new();
+            b.iter(|| {
+                aleph_alpha.tokens_into(black_box(text), &mut ids, &mut ranges, None);
+                black_box(&ids);
+                black_box(&ranges);
+            })
+        });
     }
     group.finish();
 }
