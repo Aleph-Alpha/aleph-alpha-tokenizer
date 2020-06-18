@@ -19,28 +19,32 @@ avoiding needless allocation, re-using data, generics).
 We are very happy with the improved performance. In our tests, we found our
 tokenizer performed mostly linearly with whatever data was thrown at it, while
 the huggingface `wordpiece` tokenizer performs quadratically worse with longer
-words. The following single-core runtimes in µs were measured for a set of
-benchmarks:
+multi-token words. The following single-core runtimes in µs were measured for
+a set of benchmarks:
 
 | # |AlephAlphaTokenizer | ~ as Model | wordpiece |
 |---|--------------------|------------|-----------|
-| 0 |  780.927           | 1251.911   |  2134.343 |
-| 1 | 1000.583           | 1452.931   |  1870.142 |
-| 2 | 3240.754           | 4659.755   |  9540.037 |
-| 3 | 1772.298           | 2504.794   |  3001.438 |
-| 4 | 2376.060           | 3437.649   | 13287.062 |
-| 5 | 3270.748           | 4530.615   |  7985.852 |
-| 6 | 3813.023           | 5549.230   |  9130.947 |
-| 7 | 3173.984           | 4259.019   | 18975.838 |
-| 8 | 4811.540           | 6590.099   | 11097.789 |
-| 9 | 2896.895           | 3771.085   |  5378.582 |
+| 0 |            749.950 |   1274.923 |  2025.289 |
+| 1 |           1010.120 |   1511.214 |  1900.441 |
+| 2 |           1775.973 |   2648.909 |  2995.574 |
+| 3 |           2263.436 |   3598.771 | 12978.049 |
+| 4 |           2262.490 |   3403.918 |  4864.752 |
+| 5 |           2808.373 |   4456.960 | 18623.648 |
+| 6 |           2783.996 |   4015.472 |  5362.356 |
+| 7 |           3160.517 |   5048.136 |  9946.745 |
+| 8 |           3016.781 |   4742.037 |  8066.818 |
+| 9 |           3497.266 |   5626.896 |  8662.281 |
+|10 |           4446.626 |   6679.859 | 10584.524 |
 
 (This was measured on an Intel(R) Core(TM) i7-7600U CPU @ 2.80GHz running on
-a Fedora kernel 5.5.13-200.fc31.x86_64 with all mitigations enabled)
+a Fedora kernel 5.6.15-300.fc32.x86_64 with all mitigations enabled)
 
 As you can see, using our tokenizer as a model is faster than huggingface's 
-wordpiece tokenizer by at least 20%, often more. Using the rustic interface, we 
-can omit a lot of allocation and memory copying, so we are at least 45% faster.
+wordpiece tokenizer by at least 13%, often more. Using the rustic interface, we 
+can omit a lot of allocation and memory copying, so we are at least 60% faster.
+
+To re-run the benchmark, call `cargo bench --all-features`. Otherwise only the
+`AlephAlphaTokenizer` will be benchmarked.
 
 # License
 

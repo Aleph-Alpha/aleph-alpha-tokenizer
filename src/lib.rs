@@ -1,3 +1,5 @@
+#![doc(html_root_url = "https://docs.rs/aleph-alpha-tokenizer/0.3.0")]
+
 //! aleph-alpha-tokenizer is a fast word-piece-like tokenizer based on fst
 //!
 //! This can be used as a `Model` in huggingface's tokenizers, or standalone.
@@ -7,7 +9,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! aleph-alpha-tokenizers = "0.1"
+//! aleph-alpha-tokenizers = "0.3"
 //! ```
 //!
 //! If you want to use it together with `tokenizers`, you need to enable the
@@ -15,7 +17,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! aleph-alpha-tokenizers = { version = "0.1", features = ["huggingface"] }
+//! aleph-alpha-tokenizers = { version = "0.3", features = ["huggingface"] }
 //! ```
 //!
 //! # Examples
@@ -517,8 +519,6 @@ impl Model for AlephAlphaTokenizer {
     ) -> Result<Vec<HfToken>, Box<dyn Error + Send + Sync>> {
         // we expect at least one token per word.
         let mut result = Vec::with_capacity(tokens.len());
-        let mut last_byte = 0;
-        let mut last_char = 0; //TODO
         for (index, (word_str, offsets)) in tokens.into_iter().enumerate() {
             let word = index as u32;
             let word_index = result.len();
@@ -526,10 +526,12 @@ impl Model for AlephAlphaTokenizer {
             let word_len = word_bytes.len();
             let mut last_index = 0;
             if let Some((start_index, id)) = find_longest_prefix(&self.starters, word_bytes) {
+                let value = word_str[..start_index].to_string();
+                let mut last_offset = offsets.0 + value.chars().count();
                 result.push(HfToken {
                     id: id as u32,
-                    value: word_str[..start_index].to_string(),
-                    offsets: (offsets.0, offsets.0 + start_index),
+                    value,
+                    offsets: (offsets.0, last_offset),
                     word,
                 });
                 last_index = start_index;
@@ -537,11 +539,13 @@ impl Model for AlephAlphaTokenizer {
                     if let Some((len, id)) =
                         find_longest_prefix(&self.followers, &word_bytes[last_index..])
                     {
-                        let start = offsets.0 + last_index;
+                        let value = &word_str[last_index..last_index + len];
+                        let start = last_offset;
+                        last_offset += value.chars().count();
                         result.push(HfToken {
                             id: id as u32,
-                            value: "##".to_string() + &word_str[last_index..last_index + len],
-                            offsets: (start, start + len),
+                            value: "##".to_string() + value,
+                            offsets: (start, last_offset),
                             word,
                         });
                         last_index += len;
@@ -556,7 +560,7 @@ impl Model for AlephAlphaTokenizer {
                 result.truncate(word_index);
                 result.push(HfToken {
                     id: self.unk_id,
-                    value: "[UNK±".to_string(),
+                    value: "[UNK]".to_string(),
                     offsets: (offsets.0, offsets.1),
                     word,
                 });
@@ -580,6 +584,13 @@ impl Model for AlephAlphaTokenizer {
 
     fn get_vocab_size(&self) -> usize {
         self.tokens.len()
+    }
+
+    /// We won't implement this method because we don't store the tokens in
+    /// a `HashMap`, and doing so would increase our memory footprint
+    /// considerably.
+    fn get_vocab(&self) -> &std::collections::HashMap<String, u32> {
+        unimplemented!()
     }
 
     fn save(

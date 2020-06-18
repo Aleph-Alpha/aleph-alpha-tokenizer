@@ -1,24 +1,25 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 
 use aleph_alpha_tokenizer::AlephAlphaTokenizer;
-use tokenizers::models::wordpiece::WordPiece;
-use tokenizers::tokenizer::Model;
+#[cfg(feature = "huggingface")]
+use tokenizers::{models::wordpiece::WordPiece, tokenizer::Model};
 
 static TEXT_LIST: &[&str] = &[
-	"Ich esse Steak.",
-	"Der Hund spielt im Garten.",
-	"Gibt es genügend Impfstoff gegen FSME angesichts der steigenden Infektionszahlen?",
-	"Ein Junge im Kindergarten spielt mit dem Ball.",
-	"Wie definiert die Bundesregierung Clans und Clankriminalität?",
-	"Gibt es genügend Impfstoff gegen Corona angesichts der steigenden Infektionszahlen?",
-	"Steht vor dem Hintergrund der gestiegenen Infektionen ausreichend Impfstoff gegen FSME zur Verfügung?",
-	"Wie viele Menschen starben durch die Folgen der Borreliose-Erkrankung?",
-	"Liegen der Bundesregierung statistische Daten zu Todesfällen in Folge von Borreliose vor und wenn ja, wie lauten diese?",
-	"Welche Abkommen mit auswärtigen Staaten bestehen seitens welcher Länder aktuell?",
-	"Welche Vereinbarungen auf Landesebene bestehen mit Drittstaaten?",
+    "Ich esse Steak.",
+    "Der Hund spielt im Garten.",
+    "Ein Junge im Kindergarten spielt mit dem Ball.",
+    "Wie definiert die Bundesregierung Clans und Clankriminalität?",
+    "Welche Vereinbarungen auf Landesebene bestehen mit Drittstaaten?",
+    "Wie viele Menschen starben durch die Folgen der Borreliose-Erkrankung?",
+    "Welche Abkommen mit auswärtigen Staaten bestehen seitens welcher Länder aktuell?",
+    "Gibt es genügend Impfstoff gegen FSME angesichts der steigenden Infektionszahlen?",
+    "Gibt es genügend Impfstoff gegen Corona angesichts der steigenden Infektionszahlen?",
+    "Steht vor dem Hintergrund der gestiegenen Infektionen ausreichend Impfstoff gegen FSME zur Verfügung?",
+    "Liegen der Bundesregierung statistische Daten zu Todesfällen in Folge von Borreliose vor und wenn ja, wie lauten diese?",
 ];
 
 fn compare_aleph_wordpiece(c: &mut Criterion) {
+    #[cfg(feature = "huggingface")]
     let wordpiece = WordPiece::from_files("vocab.txt")
         .unk_token("[UNK]".to_string())
         .build()
@@ -32,9 +33,11 @@ fn compare_aleph_wordpiece(c: &mut Criterion) {
             words.push((word.to_string(), (o, o + word.len())));
             o += word.len() + 1;
         }
+        #[cfg(feature = "huggingface")]
         group.bench_with_input(BenchmarkId::new("wordpiece", i), &i, |b, _| {
             b.iter(|| wordpiece.tokenize(black_box(words.clone())))
         });
+        #[cfg(feature = "huggingface")]
         group.bench_with_input(BenchmarkId::new("aleph_alpha_model", i), &i, |b, _| {
             b.iter(|| aleph_alpha.tokenize(black_box(words.clone())))
         });
