@@ -133,55 +133,31 @@ impl TokenID for u64 {
 }
 
 // This can be used in torch Tensors
-impl TokenID for i64 {
-    fn zero() -> Self {
-        0
-    }
-
-    #[inline(always)]
-    fn coerce(t: u64) -> Self {
-        t as i64
-    }
-
-    #[inline(always)]
-    fn restore(self) -> u64 {
-        self as u64
-    }
+macro_rules! impl_token_id {
+    ($ty:ty, $zero:expr) => {
+        impl TokenID for $ty {
+            #[inline(always)]
+            fn zero() -> Self {
+                $zero
+            }
+            
+            #[inline(always)]
+            fn coerce(t: u64) -> Self {
+                t as $ty
+            }
+            
+            #[inline(always)]
+            fn restore(self) -> u64 {
+                self as u64
+            }
+        }
+    };
 }
-
-// This can be used in torch Tensors
-impl TokenID for i32 {
-    fn zero() -> Self {
-        0
-    }
-
-    #[inline(always)]
-    fn coerce(t: u64) -> Self {
-        t as i32
-    }
-
-    #[inline(always)]
-    fn restore(self) -> u64 {
-        self as u64
-    }
-}
-
-// This can be used in torch Tensors
-impl TokenID for f64 {
-    fn zero() -> Self {
-        0.0
-    }
-
-    #[inline(always)]
-    fn coerce(t: u64) -> Self {
-        t as f64
-    }
-
-    #[inline(always)]
-    fn restore(self) -> u64 {
-        self as u64
-    }
-}
+            
+impl_token_id!(i64, 0);
+impl_token_id!(i32, 0);
+impl_token_id!(f64, 0.0);
+impl_token_id!(f32, 0.0);
 
 /// The Tokenizer. Use [`AlephAlphaTokenizer::from_vocab`] to create an
 /// instance.
@@ -388,7 +364,11 @@ impl AlephAlphaTokenizer {
                     w.push(last_token..replace(&mut last_token, token_ids.len()));
                 }
             }
-            last_offs += next_ws + 1;
+            last_offs += next_ws;
+            last_offs += text[last_offs..].chars().next().unwrap_or('\0').len_utf8();
+            if let Some(non_ws) = text[last_offs..].find(|c: char| !c.is_whitespace()) {
+                last_offs += non_ws;
+            }
         }
         if last_offs < text_len {
             self.tokenize_word(text, last_offs..text_len, token_ids, token_ranges);
